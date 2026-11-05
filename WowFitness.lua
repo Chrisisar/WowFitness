@@ -17,6 +17,37 @@ local WORKOUT_MAPPING = {
     RAID_COMPLETE = { exercise = "arm circles (F+B) + pike plank/RDL", count = 10 },
     PLAYER_DEAD = { exercise = "Burpees/Squat-jump", count = 20 },
 }
+local WORKOUT_MAPPING_ORDER = {
+    "WAITING_QUEUE",
+    "SERVER_DC",
+    "PLAYER_LEVEL_UP",
+    "BAG_FULL",
+    "LEVEL_CAP",
+    "QUEST_TURNED_IN",
+    "DUNGEON_COMPLETE",
+    "RAID_COMPLETE",
+    "PLAYER_DEAD"
+}
+
+WoWFitnessDB.workoutMapping = WoWFitnessDB.workoutMapping or {}
+for eventType, default in pairs(WORKOUT_MAPPING) do
+    local saved = WoWFitnessDB.workoutMapping[eventType]
+    if type(saved) == "table"
+        and type(saved.exercise) == "string"
+        and type(saved.count) == "number"
+        and saved.count > 0
+        and saved.count == math.floor(saved.count) then
+        WORKOUT_MAPPING[eventType] = {
+            exercise = saved.exercise,
+            count = saved.count
+        }
+    else
+        WoWFitnessDB.workoutMapping[eventType] = {
+            exercise = default.exercise,
+            count = default.count
+        }
+    end
+end
 
 -- Create main frame for event handling
 local frame = CreateFrame("Frame")
@@ -34,6 +65,108 @@ local lastBagFullCheck = 0
 
 -- UI Frame for the Hourly Notification Popup
 local workoutFrame = nil
+local configFrame = nil
+
+local function CreateWorkoutConfigUI()
+    if configFrame then return configFrame end
+
+    configFrame = CreateFrame("Frame", "WoWFitnessConfig", UIParent, "BasicFrameTemplateWithInset")
+    configFrame:SetSize(500, 460)
+    configFrame:SetPoint("CENTER")
+    configFrame:SetMovable(true)
+    configFrame:EnableMouse(true)
+    configFrame:RegisterForDrag("LeftButton")
+    configFrame:SetScript("OnDragStart", configFrame.StartMoving)
+    configFrame:SetScript("OnDragStop", configFrame.StopMovingOrSizing)
+    configFrame:Hide()
+
+    configFrame.title = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    configFrame.title:SetPoint("TOP", configFrame, "TOP", 0, -5)
+    configFrame.title:SetText("Workout Mapping")
+
+    local instruction = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    instruction:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 18, -34)
+    instruction:SetText("Edit the exercise and repetition count for each event.")
+
+    local eventHeader = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    eventHeader:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 18, -54)
+    eventHeader:SetWidth(135)
+    eventHeader:SetText("Event")
+
+    local exerciseHeader = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    exerciseHeader:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 158, -54)
+    exerciseHeader:SetText("Exercise")
+
+    local countHeader = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    countHeader:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 405, -54)
+    countHeader:SetText("Reps")
+
+    configFrame.rows = {}
+    for rowIndex, eventType in ipairs(WORKOUT_MAPPING_ORDER) do
+        local data = WORKOUT_MAPPING[eventType]
+        local row = CreateFrame("Frame", nil, configFrame)
+        row:SetSize(464, 30)
+        row:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 18, -72 - ((rowIndex - 1) * 38))
+
+        row.eventLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        row.eventLabel:SetPoint("LEFT", row, "LEFT", 0, 0)
+        row.eventLabel:SetWidth(135)
+        row.eventLabel:SetJustifyH("LEFT")
+        row.eventLabel:SetText(eventType)
+
+        row.exercise = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+        row.exercise:SetSize(235, 24)
+        row.exercise:SetPoint("LEFT", row, "LEFT", 140, 0)
+        row.exercise:SetAutoFocus(false)
+        row.exercise:SetText(data.exercise)
+
+        row.count = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+        row.count:SetSize(55, 24)
+        row.count:SetPoint("LEFT", row.exercise, "RIGHT", 12, 0)
+        row.count:SetAutoFocus(false)
+        row.count:SetNumeric(true)
+        row.count:SetMaxLetters(5)
+        row.count:SetText(tostring(data.count))
+
+        row.eventType = eventType
+        table.insert(configFrame.rows, row)
+    end
+
+    local saveButton = CreateFrame("Button", nil, configFrame, "GameMenuButtonTemplate")
+    saveButton:SetSize(120, 25)
+    saveButton:SetPoint("BOTTOM", configFrame, "BOTTOM", 0, 12)
+    saveButton:SetText("Save")
+    saveButton:SetScript("OnClick", function()
+        local updated = {}
+        for _, row in ipairs(configFrame.rows) do
+            local exercise = row.exercise:GetText()
+            local count = tonumber(row.count:GetText())
+            if not exercise or not string.match(exercise, "%S") then
+                print("|cFFFF0000[WoW Fitness]:|r Exercise names cannot be empty.")
+                row.exercise:SetFocus()
+                return
+            end
+            if not count or count < 1 or count ~= math.floor(count) then
+                print("|cFFFF0000[WoW Fitness]:|r Repetition counts must be positive whole numbers.")
+                row.count:SetFocus()
+                return
+            end
+            updated[row.eventType] = { exercise = exercise, count = count }
+        end
+
+        for eventType, data in pairs(updated) do
+            WORKOUT_MAPPING[eventType] = data
+            WoWFitnessDB.workoutMapping[eventType] = {
+                exercise = data.exercise,
+                count = data.count
+            }
+        end
+        print("|cFF00FF00[WoW Fitness]:|r Workout mapping saved.")
+        configFrame:Hide()
+    end)
+
+    return configFrame
+end
 
 local function CreateWorkoutUI()
     if workoutFrame then return workoutFrame end
@@ -65,7 +198,7 @@ local function CreateWorkoutUI()
     -- Close / Acknowledge Button
     workoutFrame.closeBtn = CreateFrame("Button", nil, workoutFrame, "GameMenuButtonTemplate")
     workoutFrame.closeBtn:SetSize(120, 25)
-    workoutFrame.closeBtn:SetPoint("BOTTOM", 0, 10)
+    workoutFrame.closeBtn:SetPoint("BOTTOMRIGHT", workoutFrame, "BOTTOMRIGHT", -10, 10)
     workoutFrame.closeBtn:SetText("Confirm / Close")
     workoutFrame.closeBtn:SetScript("OnClick", function()
         -- Clean up completed workouts from database
@@ -77,6 +210,14 @@ local function CreateWorkoutUI()
         end
         WoWFitnessDB.workoutsQueue = remaining
         workoutFrame:Hide()
+    end)
+
+    workoutFrame.configureBtn = CreateFrame("Button", nil, workoutFrame, "GameMenuButtonTemplate")
+    workoutFrame.configureBtn:SetSize(100, 25)
+    workoutFrame.configureBtn:SetPoint("BOTTOMLEFT", workoutFrame, "BOTTOMLEFT", 10, 10)
+    workoutFrame.configureBtn:SetText("Configure")
+    workoutFrame.configureBtn:SetScript("OnClick", function()
+        CreateWorkoutConfigUI():Show()
     end)
 
     return workoutFrame

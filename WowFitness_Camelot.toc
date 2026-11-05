@@ -1,8 +1,8 @@
 ## Interface: 16001
-## Title: WoW Fitness Forever
+## Title: WoW Fitness
 ## Notes: Combines World of Warcraft achievements with real-life workouts!
 ## Author: Chrisis
 ## Version: 1.0
 ## SavedVariables: WoWFitnessDB
 
-WoWFitnessForever.lua
+WoWFitness.lua
