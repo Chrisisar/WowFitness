@@ -29,22 +29,50 @@ local WORKOUT_MAPPING_ORDER = {
     "PLAYER_DEAD"
 }
 
-WoWFitnessDB.workoutMapping = WoWFitnessDB.workoutMapping or {}
-for eventType, default in pairs(WORKOUT_MAPPING) do
-    local saved = WoWFitnessDB.workoutMapping[eventType]
-    if type(saved) == "table"
-        and type(saved.exercise) == "string"
-        and type(saved.count) == "number"
-        and saved.count > 0
-        and saved.count == math.floor(saved.count) then
-        WORKOUT_MAPPING[eventType] = {
-            exercise = saved.exercise,
-            count = saved.count
-        }
-    else
+local function EnsureWorkoutMappingSavedVariables()
+    if type(WoWFitnessDB) ~= "table" then
+        WoWFitnessDB = {}
+    end
+    if type(WoWFitnessDB.workoutMapping) ~= "table" then
+        WoWFitnessDB.workoutMapping = {}
+    end
+end
+
+local function LoadWorkoutMapping()
+    EnsureWorkoutMappingSavedVariables()
+    for _, eventType in ipairs(WORKOUT_MAPPING_ORDER) do
+        local default = WORKOUT_MAPPING[eventType]
+        local saved = WoWFitnessDB.workoutMapping[eventType]
+        if type(saved) == "table"
+            and type(saved.exercise) == "string"
+            and saved.exercise:match("%S")
+            and type(saved.count) == "number"
+            and saved.count > 0
+            and saved.count == math.floor(saved.count) then
+            WORKOUT_MAPPING[eventType] = {
+                exercise = saved.exercise,
+                count = saved.count
+            }
+        else
+            WORKOUT_MAPPING[eventType] = {
+                exercise = default.exercise,
+                count = default.count
+            }
+            WoWFitnessDB.workoutMapping[eventType] = {
+                exercise = default.exercise,
+                count = default.count
+            }
+        end
+    end
+end
+
+local function SaveWorkoutMapping()
+    EnsureWorkoutMappingSavedVariables()
+    for _, eventType in ipairs(WORKOUT_MAPPING_ORDER) do
+        local data = WORKOUT_MAPPING[eventType]
         WoWFitnessDB.workoutMapping[eventType] = {
-            exercise = default.exercise,
-            count = default.count
+            exercise = data.exercise,
+            count = data.count
         }
     end
 end
@@ -73,6 +101,8 @@ local function CreateWorkoutConfigUI()
     configFrame = CreateFrame("Frame", "WoWFitnessConfig", UIParent, "BasicFrameTemplateWithInset")
     configFrame:SetSize(500, 460)
     configFrame:SetPoint("CENTER")
+    configFrame:SetFrameStrata("DIALOG")
+    configFrame:SetToplevel(true)
     configFrame:SetMovable(true)
     configFrame:EnableMouse(true)
     configFrame:RegisterForDrag("LeftButton")
@@ -156,11 +186,8 @@ local function CreateWorkoutConfigUI()
 
         for eventType, data in pairs(updated) do
             WORKOUT_MAPPING[eventType] = data
-            WoWFitnessDB.workoutMapping[eventType] = {
-                exercise = data.exercise,
-                count = data.count
-            }
         end
+        SaveWorkoutMapping()
         print("|cFF00FF00[WoW Fitness]:|r Workout mapping saved.")
         configFrame:Hide()
     end)
@@ -217,7 +244,10 @@ local function CreateWorkoutUI()
     workoutFrame.configureBtn:SetPoint("BOTTOMLEFT", workoutFrame, "BOTTOMLEFT", 10, 10)
     workoutFrame.configureBtn:SetText("Configure")
     workoutFrame.configureBtn:SetScript("OnClick", function()
-        CreateWorkoutConfigUI():Show()
+        local ui = CreateWorkoutConfigUI()
+        ui:SetFrameStrata("DIALOG")
+        ui:SetFrameLevel(workoutFrame:GetFrameLevel() + 10)
+        ui:Show()
     end)
 
     return workoutFrame
@@ -311,9 +341,12 @@ frame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local addonLoaded = ...
         if addonLoaded == addonName then
+            LoadWorkoutMapping()
             print("|cFF00FF00WoW Fitness Forever loaded successfully!|r")
             CreateWorkoutUI()
         end
+    elseif event == "PLAYER_LOGOUT" then
+        SaveWorkoutMapping()
 	elseif event == "PLAYER_ENTERING_WORLD" then
         -- Give the game 5 seconds after loading into the world to stabilize bag caches
         C_Timer.After(5, function()
