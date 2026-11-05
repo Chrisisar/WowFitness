@@ -256,23 +256,31 @@ end
 local function RefreshWorkoutUI()
     local ui = CreateWorkoutUI()
     
-    -- Clear previous checkboxes if any
-    if ui.checkboxes then
-        for _, cb in ipairs(ui.checkboxes) do cb:Hide() end
+    if ui.workoutRows then
+        for _, row in ipairs(ui.workoutRows) do
+            row.checkbox:Hide()
+            row.exercise:Hide()
+            row.count:Hide()
+        end
     end
-    ui.checkboxes = {}
+    ui.workoutRows = {}
 
     local yOffset = -10
     if #WoWFitnessDB.workoutsQueue == 0 then
-        local lbl = ui.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        lbl:SetPoint("TOPLEFT", 10, yOffset)
-        lbl:SetText("No pending workouts! Great job!")
-        table.insert(ui.checkboxes, lbl)
+        if not ui.emptyLabel then
+            ui.emptyLabel = ui.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            ui.emptyLabel:SetPoint("TOPLEFT", 10, yOffset)
+        end
+        ui.emptyLabel:SetText("No pending workouts! Great job!")
+        ui.emptyLabel:Show()
         return
-    end-- 1. Group and sum workouts by exercise name for display purposes
+    end
+    if ui.emptyLabel then ui.emptyLabel:Hide() end
+
+    -- Group and sum outstanding workouts by exercise name.
     local displayMap = {}
     for _, item in ipairs(WoWFitnessDB.workoutsQueue) do
-        if not item.done then
+        if not item.done and item.count > 0 then
             if displayMap[item.exercise] then
                 displayMap[item.exercise].count = displayMap[item.exercise].count + item.count
             else
@@ -285,39 +293,100 @@ local function RefreshWorkoutUI()
         end
     end
 
-    -- Convert the map back into a temporary list for rendering
     local displayList = {}
     for _, item in pairs(displayMap) do
         table.insert(displayList, item)
     end
+    table.sort(displayList, function(left, right)
+        return left.exercise < right.exercise
+    end)
 
     if #displayList == 0 then
-        local lbl = ui.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        lbl:SetPoint("TOPLEFT", 10, yOffset)
-        lbl:SetText("No pending workouts! Great job!")
-        table.insert(ui.checkboxes, lbl)
+        if not ui.emptyLabel then
+            ui.emptyLabel = ui.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            ui.emptyLabel:SetPoint("TOPLEFT", 10, yOffset)
+        end
+        ui.emptyLabel:SetText("No pending workouts! Great job!")
+        ui.emptyLabel:Show()
         return
     end
 
-    -- 2. Render the grouped list
+    -- Render a checkbox, exercise name, and editable remaining count per exercise.
     for i, entry in ipairs(displayList) do
-        local cb = CreateFrame("CheckButton", "WoWFitnessCheck"..i, ui.content, "InterfaceOptionsCheckButtonTemplate")
+        local exerciseName = entry.exercise
+        local cb = CreateFrame("CheckButton", nil, ui.content, "InterfaceOptionsCheckButtonTemplate")
         cb:SetPoint("TOPLEFT", 10, yOffset)
-        cb.Text:SetText(entry.count .. "x " .. entry.exercise)
-        cb:SetChecked(entry.done)
-        
-        -- When checked, mark all underlying database items matching this exercise as done
+        cb.Text:SetText("")
+        cb:SetChecked(false)
         cb:SetScript("OnClick", function(self)
             local isChecked = self:GetChecked()
-            entry.done = isChecked
             for _, dbItem in ipairs(WoWFitnessDB.workoutsQueue) do
-                if dbItem.exercise == entry.exercise then
+                if dbItem.exercise == exerciseName and dbItem.count > 0 then
                     dbItem.done = isChecked
                 end
             end
         end)
 
-        table.insert(ui.checkboxes, cb)
+        local exerciseLabel = ui.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        exerciseLabel:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        exerciseLabel:SetWidth(185)
+        exerciseLabel:SetJustifyH("LEFT")
+        exerciseLabel:SetText(exerciseName)
+
+        local countInput = CreateFrame("EditBox", nil, ui.content, "InputBoxTemplate")
+        countInput:SetSize(55, 24)
+        countInput:SetPoint("LEFT", exerciseLabel, "RIGHT", 8, 0)
+        countInput:SetAutoFocus(false)
+        countInput:SetNumeric(true)
+        countInput:SetMaxLetters(6)
+        countInput:SetText(tostring(entry.count))
+        countInput:SetScript("OnEnterPressed", function(self)
+            self:ClearFocus()
+        end)
+        countInput:SetScript("OnEditFocusLost", function(self)
+            local newCount = tonumber(self:GetText())
+            if not newCount or newCount < 0 or newCount ~= math.floor(newCount) then
+                self:SetText(tostring(entry.count))
+                print("|cFFFF0000[WoW Fitness]:|r Remaining workout counts must be whole numbers of zero or more.")
+                return
+            end
+
+            local remaining = newCount
+            local updatedQueue = {}
+            for _, dbItem in ipairs(WoWFitnessDB.workoutsQueue) do
+                if dbItem.exercise == exerciseName and not dbItem.done then
+                    if remaining > 0 then
+                        local retainedCount = math.min(dbItem.count, remaining)
+                        if retainedCount > 0 then
+                            dbItem.count = retainedCount
+                            remaining = remaining - retainedCount
+                            table.insert(updatedQueue, dbItem)
+                        end
+                    end
+                else
+                    table.insert(updatedQueue, dbItem)
+                end
+            end
+
+            if remaining > 0 then
+                table.insert(updatedQueue, {
+                    exercise = exerciseName,
+                    count = remaining,
+                    done = false
+                })
+            end
+
+            WoWFitnessDB.workoutsQueue = updatedQueue
+            entry.count = newCount
+            print("|cFF00FF00[WoW Fitness]:|r Remaining workout count updated.")
+            RefreshWorkoutUI()
+        end)
+
+        table.insert(ui.workoutRows, {
+            checkbox = cb,
+            exercise = exerciseLabel,
+            count = countInput
+        })
         yOffset = yOffset - 35
     end
 end
