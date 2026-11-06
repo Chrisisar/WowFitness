@@ -220,34 +220,28 @@ local function CreateWorkoutUI()
     -- Scrollable area or content container
     workoutFrame.content = CreateFrame("Frame", nil, workoutFrame)
     workoutFrame.content:SetPoint("TOPLEFT", 10, -30)
-    workoutFrame.content:SetPoint("BOTTOMRIGHT", -10, 40)
+    workoutFrame.content:SetPoint("BOTTOMRIGHT", -10, -10)
 
-    -- Close / Acknowledge Button
-    workoutFrame.closeBtn = CreateFrame("Button", nil, workoutFrame, "GameMenuButtonTemplate")
-    workoutFrame.closeBtn:SetSize(120, 25)
-    workoutFrame.closeBtn:SetPoint("BOTTOMRIGHT", workoutFrame, "BOTTOMRIGHT", -10, 10)
-    workoutFrame.closeBtn:SetText("Confirm / Close")
-    workoutFrame.closeBtn:SetScript("OnClick", function()
-        -- Clean up completed workouts from database
-        local remaining = {}
-        for _, item in ipairs(WoWFitnessDB.workoutsQueue) do
-            if not item.done then
-                table.insert(remaining, item)
-            end
-        end
-        WoWFitnessDB.workoutsQueue = remaining
-        workoutFrame:Hide()
-    end)
-
-    workoutFrame.configureBtn = CreateFrame("Button", nil, workoutFrame, "GameMenuButtonTemplate")
-    workoutFrame.configureBtn:SetSize(100, 25)
-    workoutFrame.configureBtn:SetPoint("BOTTOMLEFT", workoutFrame, "BOTTOMLEFT", 10, 10)
-    workoutFrame.configureBtn:SetText("Configure")
+    workoutFrame.configureBtn = CreateFrame("Button", nil, workoutFrame, "UIPanelCloseButton")
+    workoutFrame.configureBtn:SetSize(28, 28)
+    workoutFrame.configureBtn:SetPoint("RIGHT", workoutFrame.CloseButton, "LEFT", -2, 0)
+    workoutFrame.configureBtn.icon = workoutFrame.configureBtn:CreateTexture(nil, "ARTWORK")
+    workoutFrame.configureBtn.icon:SetSize(18, 18)
+    workoutFrame.configureBtn.icon:SetPoint("CENTER")
+    workoutFrame.configureBtn.icon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
     workoutFrame.configureBtn:SetScript("OnClick", function()
         local ui = CreateWorkoutConfigUI()
         ui:SetFrameStrata("DIALOG")
         ui:SetFrameLevel(workoutFrame:GetFrameLevel() + 10)
         ui:Show()
+    end)
+    workoutFrame.configureBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Configure workouts")
+        GameTooltip:Show()
+    end)
+    workoutFrame.configureBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
     end)
 
     return workoutFrame
@@ -266,17 +260,6 @@ local function RefreshWorkoutUI()
     ui.workoutRows = {}
 
     local yOffset = -10
-    if #WoWFitnessDB.workoutsQueue == 0 then
-        if not ui.emptyLabel then
-            ui.emptyLabel = ui.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            ui.emptyLabel:SetPoint("TOPLEFT", 10, yOffset)
-        end
-        ui.emptyLabel:SetText("No pending workouts! Great job!")
-        ui.emptyLabel:Show()
-        return
-    end
-    if ui.emptyLabel then ui.emptyLabel:Hide() end
-
     -- Group and sum outstanding workouts by exercise name.
     local displayMap = {}
     for _, item in ipairs(WoWFitnessDB.workoutsQueue) do
@@ -301,6 +284,8 @@ local function RefreshWorkoutUI()
         return left.exercise < right.exercise
     end)
 
+    ui:SetHeight(90 + math.max(#displayList - 1, 0) * 35)
+
     if #displayList == 0 then
         if not ui.emptyLabel then
             ui.emptyLabel = ui.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -310,6 +295,7 @@ local function RefreshWorkoutUI()
         ui.emptyLabel:Show()
         return
     end
+    if ui.emptyLabel then ui.emptyLabel:Hide() end
 
     -- Render a checkbox, exercise name, and editable remaining count per exercise.
     for i, entry in ipairs(displayList) do
@@ -319,11 +305,15 @@ local function RefreshWorkoutUI()
         cb.Text:SetText("")
         cb:SetChecked(false)
         cb:SetScript("OnClick", function(self)
-            local isChecked = self:GetChecked()
-            for _, dbItem in ipairs(WoWFitnessDB.workoutsQueue) do
-                if dbItem.exercise == exerciseName and dbItem.count > 0 then
-                    dbItem.done = isChecked
+            if self:GetChecked() then
+                local remaining = {}
+                for _, dbItem in ipairs(WoWFitnessDB.workoutsQueue) do
+                    if dbItem.exercise ~= exerciseName and not dbItem.done and dbItem.count > 0 then
+                        table.insert(remaining, dbItem)
+                    end
                 end
+                WoWFitnessDB.workoutsQueue = remaining
+                RefreshWorkoutUI()
             end
         end)
 
