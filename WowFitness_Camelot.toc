@@ -1,5 +1,6 @@
 ## Interface: 16001
 ## Title: WoW Fitness
+## IconTexture: Interface\AddOns\WowFitness\Media\icon
 ## Notes: Combines World of Warcraft achievements with real-life workouts!
 ## Author: Chrisis
 ## Version: 1.0
