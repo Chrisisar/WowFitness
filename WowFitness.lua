@@ -83,13 +83,11 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_DEAD")
 frame:RegisterEvent("PLAYER_LEVEL_UP")
 frame:RegisterEvent("QUEST_TURNED_IN")
-frame:RegisterEvent("BAG_UPDATE") -- Used to check if bags are full
 frame:RegisterEvent("PLAYER_REGEN_DISABLED") -- Fired when entering combat
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")  -- Fired when leaving combat
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_LOGOUT")
-
-local lastBagFullCheck = 0
+frame:RegisterEvent("UI_ERROR_MESSAGE")
 
 -- UI Frame for the Hourly Notification Popup
 local workoutFrame = nil
@@ -397,6 +395,7 @@ end
 local heartbeatTimer = 0
 -- Event Handler
 frame:SetScript("OnEvent", function(self, event, ...)
+	local arg1,arg2 = ...
     if event == "ADDON_LOADED" then
         local addonLoaded = ...
         if addonLoaded == addonName then
@@ -443,25 +442,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
         AddWorkout("PLAYER_LEVEL_UP")
     elseif event == "QUEST_TURNED_IN" then
         AddWorkout("QUEST_TURNED_IN")
-    elseif event == "BAG_UPDATE" then
-		-- Ignore bag updates entirely until the game has fully loaded in
-        if not isLoggedIn then return end
-        -- Throttle bag checks to avoid performance hits
-        local currentTime = GetTime()
-        if currentTime - lastBagFullCheck > 5 then
-            lastBagFullCheck = currentTime
-            local isFull = true
-            for bag = 0, 4 do
-                local freeSlots = C_Container.GetContainerNumFreeSlots(bag)
-                if freeSlots and freeSlots > 0 then
-                    isFull = false
-                    break
-                end
-            end
-            if isFull then
-                AddWorkout("BAG_FULL")
-            end
-        end
+	elseif event == "UI_ERROR_MESSAGE" then
+		if(arg2 == ERR_INV_FULL) then
+			AddWorkout("BAG_FULL")
+		end
+		
 	elseif event == "PLAYER_REGEN_DISABLED" then
         -- Automatically hide the workout window when entering combat
         if workoutFrame and workoutFrame:IsShown() then
@@ -470,7 +455,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Optional: You can leave this blank if you want it to stay hidden 
         -- until you manually type /wf or the hourly timer triggers.
-    end
+	end
 end)
 
 -- Hourly Timer Check (Runs every second, triggers every 3600 seconds)
